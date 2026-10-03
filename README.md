@@ -104,14 +104,66 @@ names must be non-empty strings and cannot be `.` or `..`.
 
 | Object | Method | Wasabi RPC method |
 | --- | --- | --- |
-| Client | `getStatus()` | `getstatus` |
-| Client | `listWallets()` | `listwallets` |
-| Client | `getFeeRates()` | `getfeerates` |
-| Client | `loadWallet()` | `loadwallet` |
-| Wallet | `getWalletInfo()` | `getwalletinfo` |
-| Wallet | `getHistory()` | `gethistory` |
-| Wallet | `listCoins()` | `listcoins` |
-| Wallet | `listUnspentCoins()` | `listunspentcoins` |
+| Client | `getStatus(options)` | `getstatus` |
+| Client | `listWallets(options)` | `listwallets` |
+| Client | `getFeeRates(options)` | `getfeerates` |
+| Client | `loadWallet(params, options)` | `loadwallet` |
+| Client | `createWallet(params, options)` | `createwallet` |
+| Client | `recoverWallet(params, options)` | `recoverwallet` |
+| Client | `broadcast(params, options)` | `broadcast` |
+| Client | `query(params, options)` | `query` |
+| Client | `stop(options)` | `stop` |
+| Wallet | `getWalletInfo(options)` | `getwalletinfo` |
+| Wallet | `getHistory(options)` | `gethistory` |
+| Wallet | `listCoins(options)` | `listcoins` |
+| Wallet | `listUnspentCoins(options)` | `listunspentcoins` |
+| Wallet | `getNewAddress(params, options)` | `getnewaddress` |
+| Wallet | `listKeys(options)` | `listkeys` |
+| Wallet | `send(params, options)` | `send` |
+| Wallet | `build(params, options)` | `build` |
+| Wallet | `buildUnsafeTransaction(params, options)` | `buildunsafetransaction` |
+| Wallet | `speedUpTransaction(params, options)` | `speeduptransaction` |
+| Wallet | `cancelTransaction(params, options)` | `canceltransaction` |
+| Wallet | `excludeFromCoinJoin(params, options)` | `excludefromcoinjoin` |
+| Wallet | `startCoinJoin(params, options)` | `startcoinjoin` |
+| Wallet | `payInCoinJoin(params, options)` | `payincoinjoin` |
+| Wallet | `listPaymentsInCoinJoin(options)` | `listpaymentsincoinjoin` |
+| Wallet | `cancelPaymentInCoinJoin(params, options)` | `cancelpaymentincoinjoin` |
+| Wallet | `startCoinJoinSweep(params, options)` | `startcoinjoinsweep` |
+| Wallet | `stopCoinJoin(options)` | `stopcoinjoin` |
+
+All 27 methods exposed by Wasabi's RPC service have named wrappers, including
+`query`, which requires Wasabi's experimental `scripting` feature. See the
+[Wasabi RPC service source](https://github.com/WalletWasabi/WalletWasabi/blob/master/WalletWasabi.Client/Rpc/WasabiJsonRpcService.cs)
+for this method.
+
+`send()` builds and broadcasts a transaction. `build()`,
+`buildUnsafeTransaction()`, `speedUpTransaction()` and `cancelTransaction()`
+return transaction hex in the response result without broadcasting it. Pass
+that hex as `client.broadcast([response.result])` to broadcast it.
+`buildUnsafeTransaction()` uses Wasabi's builder without overpayment protection.
+`stop()` asks Wasabi to exit; it uses the usual response and transport error
+handling.
+
+Any RPC method is also accessible through `client.call(method, params, options)`
+at the root endpoint or `wallet.call(method, params, options)` at that wallet's
+endpoint. The method name is a non-empty string forwarded unchanged, with no
+allowlist. These calls use the same authentication, transport, request queue,
+timeouts and error handling as the named methods and return the complete
+JSON-RPC response.
+
+```js
+const address = await wallet.getNewAddress(['Invoice', false])
+const keys = await wallet.listKeys()
+const transaction = await wallet.call('build', buildParams, { id: 'build-1' })
+const status = await client.call('getstatus', undefined, { id: 'status-1' })
+```
+
+Omit `params` or pass `undefined` to omit it from the request. To set options on
+a generic call without parameters, pass `undefined` as the second argument.
+Parameters are serialized when the call is made, before it is queued, and
+Wasabi validates their contents. `getNewAddress()` creates a new receiving
+address; its parameters are forwarded just like `loadWallet()` parameters.
 
 ## Calling methods
 
@@ -160,7 +212,7 @@ console.log(response.result)
 
 Server fields and values are otherwise preserved.
 
-`loadWallet()` returns the RPC response and does not return a wallet interface.
+`createWallet()`, `recoverWallet()` and `loadWallet()` return the RPC response.
 Use `client.wallet('Wallet name')` separately to access wallet-specific methods.
 
 `getHistory()` returns Wasabi's history data without applying accounting
@@ -206,7 +258,7 @@ responses are handled.
 
 | Error class | When | Error object |
 | --- | --- | --- |
-| `TypeError` | Invalid constructor settings, wallet names, request options or request IDs | `error.message` |
+| `TypeError` | Invalid constructor settings, wallet names, method names, request options or request IDs, or unserializable parameters | `error.message` |
 | `WasabiTransportError` | Connection, proxy, timeout, body-read or transport-cleanup failure | `error.cause` |
 | `WasabiHttpError` | Non-2xx HTTP response | `error.status`, `error.statusText`, `error.body`, `error.method` |
 | `WasabiRpcError` | JSON-RPC error response when `rejectRpcErrors` is `true` | `error.response` contains the complete JSON-RPC error response. `error.message` equals `error.response.error.message`. |

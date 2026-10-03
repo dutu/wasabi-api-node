@@ -96,8 +96,41 @@ export class WasabiClient {
     return this.#request('getstatus', options)
   }
 
+  /**
+   * Call any RPC method at the root endpoint and return the complete response.
+   * @param {string} method Wasabi RPC method name, forwarded unchanged
+   * @param {object|Array<*>} [params] Wasabi's params value; undefined omits it
+   * @param {object} [options] Request options
+   * @param {string} [options.id] Request ID; defaults to a generated UUID
+   */
+  call(method, params, options) {
+    return this.#request(method, options, { params })
+  }
+
   listWallets(options) {
     return this.#request('listwallets', options)
+  }
+
+  createWallet(params, options) {
+    return this.#request('createwallet', options, { params })
+  }
+
+  recoverWallet(params, options) {
+    return this.#request('recoverwallet', options, { params })
+  }
+
+  broadcast(params, options) {
+    return this.#request('broadcast', options, { params })
+  }
+
+  /** Execute a Scheme script; Wasabi requires its experimental scripting feature. */
+  query(params, options) {
+    return this.#request('query', options, { params })
+  }
+
+  /** Ask Wasabi to stop and exit. */
+  stop(options) {
+    return this.#request('stop', options)
   }
 
   /**
@@ -106,7 +139,7 @@ export class WasabiClient {
    */
   wallet(walletName) {
     requireWalletName(walletName)
-    return new WasabiWallet(walletName, (method, options) => this.#request(method, options, { walletName }))
+    return new WasabiWallet(walletName, (method, options, params) => this.#request(method, options, { walletName, params }))
   }
 
   /**
@@ -124,6 +157,7 @@ export class WasabiClient {
   }
 
   async #request(method, options = {}, { walletName, params } = {}) {
+    requireString(method, 'method')
     requireOptions(options)
     const id = options.id === undefined ? randomUUID() : requireString(options.id, 'id')
 

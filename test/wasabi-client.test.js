@@ -28,7 +28,7 @@ const mockRpc = function mockRpc(context, reply = (request) => ({ jsonrpc: '2.0'
   return calls
 }
 
-for (const method of ['getStatus', 'listWallets', 'getFeeRates']) {
+for (const method of ['getStatus', 'listWallets', 'getFeeRates', 'stop']) {
   test(`${method} uses the configured root endpoint without params`, async (context) => {
     const calls = mockRpc(context)
     const response = await new WasabiClient(credentials)[method]()
@@ -75,7 +75,7 @@ test('forwards a caller-owned dispatcher without cleaning it up after success or
   assert.equal(dispatcher.destroy.mock.callCount(), 0)
 })
 
-for (const method of ['getWalletInfo', 'getHistory', 'listCoins', 'listUnspentCoins']) {
+for (const method of ['getWalletInfo', 'getHistory', 'listCoins', 'listUnspentCoins', 'listKeys', 'listPaymentsInCoinJoin', 'stopCoinJoin']) {
   test(`${method} uses the wallet endpoint without params`, async (context) => {
     const calls = mockRpc(context)
     const wallet = new WasabiClient(credentials).wallet('Wallet')
@@ -201,33 +201,154 @@ test('rejects JSON-RPC errors by default and preserves the complete original res
   })
 })
 
+const parameterizedMethods = [
+  ['client', 'createWallet', ['Savings', 'password']],
+  ['client', 'recoverWallet', ['Savings', 'mnemonic', 'password']],
+  ['client', 'broadcast', ['transaction-hex']],
+  ['client', 'query', ['(+ 1 2)']],
+  ['wallet', 'send', { payments: [{ sendto: 'address', amount: 12345 }], coins: [], feeTarget: 2 }],
+  ['wallet', 'build', { payments: [{ sendto: 'address', amount: 12345 }], coins: [], feeRate: 1.5 }],
+  ['wallet', 'buildUnsafeTransaction', { payments: [], coins: [], feeRate: 1000 }],
+  ['wallet', 'speedUpTransaction', ['transaction-id', 'password']],
+  ['wallet', 'cancelTransaction', ['transaction-id', 'password']],
+  ['wallet', 'excludeFromCoinJoin', ['transaction-id', 0, true]],
+  ['wallet', 'startCoinJoin', ['password', true, false]],
+  ['wallet', 'payInCoinJoin', ['address', 12345]],
+  ['wallet', 'cancelPaymentInCoinJoin', ['payment-id']],
+  ['wallet', 'startCoinJoinSweep', ['password', 'Spending']]
+]
+
 const rpcCalls = [
   ['getStatus', (client, options) => client.getStatus(options)],
   ['listWallets', (client, options) => client.listWallets(options)],
   ['getFeeRates', (client, options) => client.getFeeRates(options)],
-  ['loadWallet', (client, options) => client.loadWallet(['Savings'], options)],
+  ['loadWallet', (client, options) => client.loadWallet(['Savings'], options), 'loadwallet', ['Savings']],
+  ['stop', (client, options) => client.stop(options)],
   ['getWalletInfo', (client, options) => client.wallet('Savings').getWalletInfo(options)],
   ['getHistory', (client, options) => client.wallet('Savings').getHistory(options)],
   ['listCoins', (client, options) => client.wallet('Savings').listCoins(options)],
-  ['listUnspentCoins', (client, options) => client.wallet('Savings').listUnspentCoins(options)]
+  ['listUnspentCoins', (client, options) => client.wallet('Savings').listUnspentCoins(options)],
+  ['listKeys', (client, options) => client.wallet('Savings').listKeys(options)],
+  ['getNewAddress', (client, options) => client.wallet('Savings').getNewAddress(['Invoice', false], options), 'getnewaddress', ['Invoice', false]],
+  ['listPaymentsInCoinJoin', (client, options) => client.wallet('Savings').listPaymentsInCoinJoin(options)],
+  ['stopCoinJoin', (client, options) => client.wallet('Savings').stopCoinJoin(options)],
+  ['client.call', (client, options) => client.call('futureRootMethod', { id: 'parameter-id' }, options), 'futureRootMethod', { id: 'parameter-id' }],
+  ['wallet.call', (client, options) => client.wallet('Savings').call('futureWalletMethod', ['raw'], options), 'futureWalletMethod', ['raw']],
+  ...parameterizedMethods.map(([target, method, params]) => [
+    method,
+    (client, options) => (target === 'client' ? client : client.wallet('Savings'))[method](params, options),
+    method.toLowerCase(),
+    params,
+    target === 'client'
+  ])
 ]
 
-for (const [method, call] of rpcCalls) {
+for (const [target, method] of parameterizedMethods) {
+  test(`${method} forwards both parameter forms, preserves future fields and omits undefined params`, async (context) => {
+    const calls = mockRpc(context, (request) => ({ jsonrpc: '2.0', id: request.id, extra: { raw: true } }))
+    const client = new WasabiClient(credentials)
+    const object = target === 'client' ? client : client.wallet('Savings')
+    const values = [['raw', { future: true }], { id: 'parameter-id', future: { raw: true } }, undefined, null]
+    for (const params of values) {
+      const response = await object[method](params)
+      const { request } = calls.at(-1)
+      assert.deepEqual(request.params, params)
+      assert.equal(Object.hasOwn(request, 'params'), params !== undefined)
+      assert.deepEqual(response, { jsonrpc: '2.0', id: request.id, extra: { raw: true } })
+    }
+    assert.equal(calls.length, values.length)
+  })
+}
+
+for (const target of ['client', 'wallet']) {
+  for (const params of [undefined, null, [], {}, ['password', true], { payments: [{ amount: 12345 }], id: 'parameter-id' }]) {
+    test(`${target}.call forwards ${JSON.stringify(params)} without interpreting parameters`, async (context) => {
+      const calls = mockRpc(context, (request) => ({ jsonrpc: '2.0', id: request.id, result: null, extra: { raw: true } }))
+      const client = new WasabiClient({ ...credentials, rpcUrl: 'https://rpc.example.test/prefix/' })
+      const object = target === 'client' ? client : client.wallet('Savings / é?#%')
+      const response = await object.call('FutureMethod', params)
+      assert.deepEqual(calls[0].request.params, params)
+      assert.equal(Object.hasOwn(calls[0].request, 'params'), params !== undefined)
+      assert.equal(calls[0].request.method, 'FutureMethod')
+      assert.equal(calls[0].url, target === 'client'
+        ? 'https://rpc.example.test/prefix/'
+        : 'https://rpc.example.test/prefix/Savings%20%2F%20%C3%A9%3F%23%25')
+      assert.deepEqual(response, { jsonrpc: '2.0', id: calls[0].request.id, result: null, extra: { raw: true } })
+    })
+  }
+
+  test(`${target}.call omits parameters when given only a method name`, async (context) => {
+    const calls = mockRpc(context)
+    const client = new WasabiClient(credentials)
+    const object = target === 'client' ? client : client.wallet('Savings')
+    await object.call('stop')
+    await object.call('stop', undefined, { id: 'stop-id' })
+    assert.ok(calls.every(({ request }) => !Object.hasOwn(request, 'params')))
+    assert.equal(calls[1].request.id, 'stop-id')
+  })
+
+  test(`${target}.call validates method names before dispatch`, async (context) => {
+    const calls = mockRpc(context)
+    const client = new WasabiClient(credentials)
+    const object = target === 'client' ? client : client.wallet('Savings')
+    for (const method of [undefined, null, '', '   ', 123, true, [], {}]) {
+      await assert.rejects(object.call(method), { name: 'TypeError', message: 'method must be a non-empty string' })
+    }
+    assert.equal(calls.length, 0)
+    await object.call('getstatus')
+    assert.equal(calls.length, 1)
+  })
+
+  test(`${target}.call snapshots parameters before dispatch and recovers from serialization failures`, async (context) => {
+    const calls = mockRpc(context)
+    const client = new WasabiClient(credentials)
+    const object = target === 'client' ? client : client.wallet('Savings')
+    const params = { nested: [{ value: true }], id: 'parameter-id' }
+    const options = { id: 'request-id' }
+    const pending = object.call('build', params, options)
+    params.nested[0].value = false
+    options.id = 'changed'
+    await pending
+    assert.deepEqual(calls[0].request.params, { nested: [{ value: true }], id: 'parameter-id' })
+    assert.equal(calls[0].request.id, 'request-id')
+
+    const circular = {}
+    circular.self = circular
+    for (const invalidParams of [circular, [1n]]) {
+      await assert.rejects(object.call('build', invalidParams), TypeError)
+    }
+    assert.equal(calls.length, 1)
+    await client.getStatus()
+    assert.equal(calls.length, 2)
+  })
+}
+
+test('getNewAddress forwards named parameters unchanged and delegates validation to Wasabi', async (context) => {
+  const calls = mockRpc(context)
+  const wallet = new WasabiClient(credentials).wallet('Savings')
+  await wallet.getNewAddress({ label: 'Invoice', isTaproot: true, future: { raw: true } })
+  await wallet.getNewAddress(null)
+  assert.deepEqual(calls[0].request.params, { label: 'Invoice', isTaproot: true, future: { raw: true } })
+  assert.equal(calls[1].request.params, null)
+  assert.ok(calls.every(({ request }) => request.method === 'getnewaddress'))
+})
+
+for (const [method, call, rpcMethod = method.toLowerCase(), params,
+  rootMethod = ['getStatus', 'listWallets', 'getFeeRates', 'loadWallet', 'stop', 'client.call'].includes(method)] of rpcCalls) {
   test(`${method} sends an explicit request ID separately from RPC parameters`, async (context) => {
     const calls = mockRpc(context)
     const client = new WasabiClient(credentials)
     const options = { id: `custom-${method}` }
     const response = await call(client, options)
-    const expectedRequest = { jsonrpc: '2.0', id: options.id, method: method.toLowerCase() }
+    const expectedRequest = { jsonrpc: '2.0', id: options.id, method: rpcMethod }
 
-    if (method === 'loadWallet') {
-      expectedRequest.params = ['Savings']
+    if (params !== undefined) {
+      expectedRequest.params = params
     }
 
     assert.deepEqual(calls[0].request, expectedRequest)
     assert.deepEqual(response, { jsonrpc: '2.0', id: options.id, result: {} })
     assert.deepEqual(options, { id: `custom-${method}` })
-    const rootMethod = ['getStatus', 'listWallets', 'getFeeRates', 'loadWallet'].includes(method)
     assert.equal(calls[0].url, rootMethod ? credentials.rpcUrl : `${credentials.rpcUrl}Savings`)
     assert.equal(calls.length, 1)
   })
@@ -253,7 +374,7 @@ for (const [method, call] of rpcCalls) {
       }
 
       assert.equal(calls.length, 1)
-      assert.equal(calls[0].request.method, method.toLowerCase())
+      assert.equal(calls[0].request.method, rpcMethod)
       assert.equal(calls[0].request.id, id)
     })
   }
@@ -485,15 +606,23 @@ test('serializes concurrent calls until the preceding response body is consumed'
 
   const client = new WasabiClient(credentials)
   const loading = client.loadWallet({ walletName: 'Savings' })
-  const info = client.wallet('Spending').getWalletInfo()
+  const info = client.wallet('Spending').call('getwalletinfo')
+  const status = client.call('getstatus')
+  const coins = client.wallet('Savings').listCoins()
   await setImmediate()
   assert.equal(calls.length, 1)
   controller.enqueue(new TextEncoder().encode(JSON.stringify({ jsonrpc: '2.0', id: firstRequest.id })))
   controller.close()
   assert.deepEqual(await loading, { jsonrpc: '2.0', id: firstRequest.id })
   assert.deepEqual(await info, { jsonrpc: '2.0', id: calls[1].request.id, result: { walletName: 'Wallet' } })
-  assert.deepEqual(calls.map((call) => call.request.method), ['loadwallet', 'getwalletinfo'])
-  assert.deepEqual(calls.map((call) => call.url), ['http://127.0.0.1:37128/', 'http://127.0.0.1:37128/Spending'])
+  await Promise.all([status, coins])
+  assert.deepEqual(calls.map((call) => call.request.method), ['loadwallet', 'getwalletinfo', 'getstatus', 'listcoins'])
+  assert.deepEqual(calls.map((call) => call.url), [
+    'http://127.0.0.1:37128/',
+    'http://127.0.0.1:37128/Spending',
+    'http://127.0.0.1:37128/',
+    'http://127.0.0.1:37128/Savings'
+  ])
 })
 
 test('a failed call rejects its caller and does not poison the queue', async (context) => {
@@ -673,11 +802,13 @@ test('the public interfaces do not expose the low-level transport', () => {
   const wallet = client.wallet('Savings')
 
   for (const object of [client, wallet]) {
+    assert.equal(typeof object.call, 'function')
     assert.equal(object.request, undefined)
     assert.equal(object.rpc, undefined)
-    assert.equal(object.send, undefined)
   }
 
+  assert.equal(client.send, undefined)
+  assert.equal(typeof wallet.send, 'function')
   assert.equal(client.getWalletInfo, undefined)
   assert.equal(wallet.getStatus, undefined)
   assert.equal(client.close, undefined)
