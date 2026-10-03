@@ -33,9 +33,9 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test && tsc -p type-tests/tsconfig.json && tsc -p type-tests/tsconfig.json --module ESNext --moduleResolution Bundler",
+    "test": "node --test \"test/*.test.js\" && tsc -p test/types/tsconfig.json && tsc -p test/types/tsconfig.json --module ESNext --moduleResolution Bundler",
     "test:live": "node test/live.test.js",
-    "test:types": "tsc -p type-tests/tsconfig.json && tsc -p type-tests/tsconfig.json --module ESNext --moduleResolution Bundler"
+    "test:types": "tsc -p test/types/tsconfig.json && tsc -p test/types/tsconfig.json --module ESNext --moduleResolution Bundler"
   },
   "packageManager": "yarn@4.18.0",
   "dependencies": {

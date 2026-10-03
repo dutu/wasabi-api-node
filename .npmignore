@@ -3,7 +3,6 @@
 
 # Tests and generated reports
 /test/
-/type-tests/
 /coverage/
 /.nyc_output/
 

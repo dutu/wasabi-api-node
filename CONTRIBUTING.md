@@ -10,8 +10,9 @@ yarn install --immutable
 yarn test
 ```
 
-`yarn test` runs the runtime tests and strict TypeScript consumer checks using
-both NodeNext and bundler module resolution. To run only the declaration checks:
+`yarn test` runs the runtime tests in `test/*.test.js` and strict TypeScript
+consumer checks in `test/types/` using both NodeNext and bundler module resolution.
+To run only the declaration checks:
 
 ```sh
 yarn test:types
@@ -21,10 +22,13 @@ Yarn enables the PnP loaders automatically. To run Node directly after a Yarn
 install, enable both loaders explicitly:
 
 ```sh
-node --require ./.pnp.cjs --loader ./.pnp.loader.mjs --test
+node --require ./.pnp.cjs --loader ./.pnp.loader.mjs --test "test/*.test.js"
 ```
 
-Bare `node --test` and `npm test` require a conventional `node_modules` install;
+Use the explicit `test/*.test.js` pattern when running Node's test runner so it
+does not execute the compile-only TypeScript fixtures in `test/types/`.
+
+`node --test "test/*.test.js"` and `npm test` require a conventional `node_modules` install;
 they do not enable Yarn's PnP loaders. The HTTPS test subprocesses inherit both
 Node loader arguments and `NODE_OPTIONS` from the test runner.
 
