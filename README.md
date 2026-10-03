@@ -5,8 +5,8 @@
 A small Node.js client for the Wasabi Wallet JSON-RPC API. Requires
 **Node.js >= 22**.
 
-Connects to Wasabi's plaintext HTTP RPC server, with HTTPS via a reverse proxy
-or custom dispatcher and optional SOCKS5 proxying.
+Connects to Wasabi's plaintext HTTP RPC server, with optional SOCKS5 proxying. 
+HTTPS can be used when the RPC server is exposed through a TLS-terminating reverse proxy or gateway.
 
 The library is intentionally thin: RPC responses are returned in their original
 JSON-RPC form and Wasabi-specific accounting or business logic is not added.
@@ -99,10 +99,8 @@ names must be non-empty strings and cannot be `.` or `..`.
 | Wallet | `startCoinJoinSweep(params, options)` | `startcoinjoinsweep` |
 | Wallet | `stopCoinJoin(options)` | `stopcoinjoin` |
 
-All 27 methods exposed by Wasabi's RPC service have named wrappers, including
-`query`, which requires Wasabi's experimental `scripting` feature. See the
-[Wasabi RPC service source](https://github.com/WalletWasabi/WalletWasabi/blob/master/WalletWasabi.Client/Rpc/WasabiJsonRpcService.cs)
-for this method.
+The library provides dedicated client methods for all 26 RPC methods documented by Wasabi. 
+It also exposes the experimental `query` method found in `WasabiJsonRpcService`, which requires Wasabi's scripting experimental feature.
 
 ```js
 const address = await wallet.getNewAddress(['Invoice', false])
