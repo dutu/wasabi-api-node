@@ -42,8 +42,38 @@ for (const method of ['getStatus', 'listWallets', 'getFeeRates']) {
     assert.equal(calls[0].options.headers.Accept, 'application/json')
     assert.equal(calls[0].options.redirect, 'manual')
     assert.ok(calls[0].options.signal instanceof AbortSignal)
+    assert.equal(Object.hasOwn(calls[0].options, 'dispatcher'), false)
   })
 }
+
+test('forwards a caller-owned dispatcher without cleaning it up after success or failure', async (context) => {
+  const failure = new TypeError('fetch failed')
+  const calls = mockRpc(context, (request) => {
+    if (request.method === 'listwallets') {
+      throw failure
+    }
+    return { jsonrpc: '2.0', id: request.id, result: {} }
+  })
+  const dispatcher = {
+    dispatch: context.mock.fn(),
+    close: context.mock.fn(),
+    destroy: context.mock.fn()
+  }
+  const options = { ...credentials, dispatcher }
+  const client = new WasabiClient(options)
+  options.dispatcher = undefined
+  await client.getStatus()
+  await assert.rejects(client.listWallets(), (error) => {
+    assert.ok(error instanceof WasabiTransportError)
+    assert.equal(error.cause, failure)
+    return true
+  })
+  await client.wallet('Savings').getWalletInfo()
+  assert.equal(calls.length, 3)
+  assert.ok(calls.every((call) => call.options.dispatcher === dispatcher))
+  assert.equal(dispatcher.close.mock.callCount(), 0)
+  assert.equal(dispatcher.destroy.mock.callCount(), 0)
+})
 
 for (const method of ['getWalletInfo', 'getHistory', 'listCoins', 'listUnspentCoins']) {
   test(`${method} uses the wallet endpoint without params`, async (context) => {
@@ -677,7 +707,15 @@ for (const [label, options] of [
   ['null RPC error policy', { rejectRpcErrors: null }],
   ['string RPC error policy', { rejectRpcErrors: 'false' }],
   ['numeric RPC error policy', { rejectRpcErrors: 0 }],
-  ['object RPC error policy', { rejectRpcErrors: {} }]
+  ['object RPC error policy', { rejectRpcErrors: {} }],
+  ['null dispatcher', { dispatcher: null }],
+  ['string dispatcher', { dispatcher: 'agent' }],
+  ['numeric dispatcher', { dispatcher: 1 }],
+  ['boolean dispatcher', { dispatcher: false }],
+  ['array dispatcher', { dispatcher: [] }],
+  ['dispatcher without dispatch', { dispatcher: {} }],
+  ['non-function dispatch', { dispatcher: { dispatch: true } }],
+  ['dispatcher with proxy', { dispatcher: { dispatch() {} }, proxyUrl: 'socks5h://127.0.0.1:9050' }]
 ]) {
   test(`rejects configuration: ${label}`, () => {
     assert.throws(() => new WasabiClient({ ...credentials, ...options }), TypeError)

@@ -32,6 +32,7 @@ export class WasabiClient {
   #authorization
   #timeoutMs
   #rejectRpcErrors
+  #dispatcher
   #createDispatcher
   #queue = Promise.resolve()
 
@@ -41,6 +42,7 @@ export class WasabiClient {
    * @param {string} options.rpcPassword Wasabi's JsonRpcPassword
    * @param {string} options.rpcUrl Root HTTP(S) RPC URL
    * @param {string} [options.proxyUrl] SOCKS5 proxy URL, with destination DNS resolved by the proxy
+   * @param {import('undici').Dispatcher} [options.dispatcher] Caller-owned dispatcher; cannot be combined with proxyUrl
    * @param {number} [options.timeoutMs=30000] Timeout per dispatched request
    * @param {boolean} [options.rejectRpcErrors=true] Reject JSON-RPC errors while preserving their response
    */
@@ -55,7 +57,7 @@ export class WasabiClient {
       throw new TypeError('Pass the wallet name to wallet(walletName) or loadWallet([walletName])')
     }
 
-    const { rpcUrl, rpcUsername, rpcPassword, proxyUrl, timeoutMs = 30000, rejectRpcErrors = true } = options
+    const { rpcUrl, rpcUsername, rpcPassword, proxyUrl, dispatcher, timeoutMs = 30000, rejectRpcErrors = true } = options
     this.#rpcUrl = createRpcUrl(rpcUrl)
     requireString(rpcUsername, 'rpcUsername')
     requireString(rpcPassword, 'rpcPassword')
@@ -72,9 +74,21 @@ export class WasabiClient {
       throw new TypeError('rejectRpcErrors must be a boolean')
     }
 
+    if (dispatcher !== undefined) {
+      if (dispatcher === null || typeof dispatcher !== 'object' || Array.isArray(dispatcher)
+        || typeof dispatcher.dispatch !== 'function') {
+        throw new TypeError('dispatcher must be an Undici-compatible dispatcher with a dispatch method')
+      }
+
+      if (proxyUrl !== undefined) {
+        throw new TypeError('dispatcher cannot be combined with proxyUrl; configure proxying in the dispatcher')
+      }
+    }
+
     this.#authorization = `Basic ${Buffer.from(`${rpcUsername}:${rpcPassword}`, 'utf8').toString('base64')}`
     this.#timeoutMs = timeoutMs
     this.#rejectRpcErrors = rejectRpcErrors
+    this.#dispatcher = dispatcher
     this.#createDispatcher = createProxyDispatcherFactory(proxyUrl, timeoutMs)
   }
 
@@ -132,7 +146,8 @@ export class WasabiClient {
   }
 
   async #send(endpoint, request, requestBody) {
-    const dispatcher = this.#createDispatcher?.()
+    const ownedDispatcher = this.#createDispatcher?.()
+    const dispatcher = this.#dispatcher ?? ownedDispatcher
     let response
     let body
     let failure
@@ -155,7 +170,7 @@ export class WasabiClient {
       failure = cause
     } finally {
       try {
-        await dispatcher?.destroy()
+        await ownedDispatcher?.destroy()
       } catch (cause) {
         failure = failure === undefined
           ? cause

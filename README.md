@@ -43,8 +43,51 @@ Pass these settings to `new WasabiClient({ ... })`:
 | `rpcUsername` | No default | Required non-empty HTTP Basic Auth username. Cannot contain `:`. |
 | `rpcPassword` | No default | Required non-empty HTTP Basic Auth password. |
 | `proxyUrl` | None | Optional `socks5h://` or `socks5://` proxy URL with an explicit port, e.g. `socks5h://127.0.0.1:9050`. Both schemes delegate destination hostname resolution to the proxy. Proxy authentication may be supplied using a URL-encoded username and password. See Wasabi's [onion-service setup](https://docs.wasabiwallet.io/using-wasabi/RPC.html#expose-the-rpc-server-as-an-onion-service). |
+| `dispatcher` | None | Optional caller-owned Undici-compatible dispatcher for custom TLS or transport settings. Must have a `dispatch()` method. Cannot be combined with `proxyUrl`; configure any proxying in the dispatcher instead. See [Custom TLS and dispatchers](#custom-tls-and-dispatchers). |
 | `timeoutMs` | `30000` | Positive integer timeout in milliseconds covering connection setup and reading the response. The timeout starts when the request is sent. |
 | `rejectRpcErrors` | `true` | When `true`, RPC methods throw `WasabiRpcError` for JSON-RPC error responses. When `false`, the complete JSON-RPC error response is returned instead. See [Errors](#errors). |
+
+## Custom TLS and dispatchers
+
+Pass an [Undici Agent](https://github.com/nodejs/undici/blob/main/docs/docs/api/Agent.md)
+as `dispatcher` to trust a private CA for this client without setting
+`NODE_EXTRA_CA_CERTS` globally. Install `undici` as a direct dependency in your
+application to import it.
+
+```js
+import { readFileSync } from 'node:fs'
+import { Agent } from 'undici'
+import { WasabiClient } from 'wasabi-api-node'
+
+const dispatcher = new Agent({
+  connect: {
+    ca: readFileSync('./private-ca.pem')
+  }
+})
+
+const client = new WasabiClient({
+  rpcUrl: 'https://rpc.example.com/wasabi/',
+  rpcUsername: process.env.WASABI_RPC_USERNAME,
+  rpcPassword: process.env.WASABI_RPC_PASSWORD,
+  dispatcher
+})
+
+try {
+  const status = await client.getStatus()
+  console.log(status.result)
+} finally {
+  await dispatcher.close()
+}
+```
+
+For mutual TLS, also supply `cert: readFileSync('./client-cert.pem')` and
+`key: readFileSync('./client-key.pem')` in the Agent's `connect` options.
+Certificate and hostname verification remain enabled by default.
+
+The same dispatcher is used for all root and wallet requests on the client. It
+may be shared between clients. The caller owns its lifecycle: the library never
+closes or destroys it, including after failed requests. Close it after all clients
+using it have finished. Client timeouts still apply to dispatched requests.
 
 ## Implemented RPC methods
 

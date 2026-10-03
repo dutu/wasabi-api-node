@@ -1,16 +1,14 @@
 import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
-import { execFile } from 'node:child_process'
 import { once } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { createServer, request as httpRequest } from 'node:http'
 import { createServer as createHttpsServer } from 'node:https'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
+import { Agent, getGlobalDispatcher } from 'undici'
 import { WasabiClient, WasabiTransportError } from 'wasabi-api-node'
 
-const execFileAsync = promisify(execFile)
 const certificatePath = fileURLToPath(new URL('./fixtures/proxy-cert.pem', import.meta.url))
 
 test('HTTPS reverse proxies preserve authentication, encoded wallet paths and parameter arrays', async (context) => {
@@ -74,21 +72,15 @@ test('HTTPS reverse proxies preserve authentication, encoded wallet paths and pa
   })
   assert.equal(calls.length, 0)
 
-  // Trust the test CA at startup without changing production TLS validation.
-  // Preserve loaders supplied through Node flags; NODE_OPTIONS is inherited below.
-  const { stdout } = await execFileAsync(process.execPath, [...process.execArgv, '--input-type=module', '--eval', `
-    import { WasabiClient } from 'wasabi-api-node'
-    const client = new WasabiClient(${JSON.stringify(options)})
-    const status = await client.getStatus()
-    const loading = await client.loadWallet(['Savings / é?#%'])
-    const wallet = client.wallet('Savings / é?#%')
-    const info = await wallet.getWalletInfo()
-    console.log(JSON.stringify({ status, loading, walletName: wallet.walletName, info }))
-  `], {
-    env: { ...process.env, NODE_EXTRA_CA_CERTS: certificatePath },
-    timeout: 5000
-  })
-  assert.deepEqual(JSON.parse(stdout), {
+  const globalDispatcher = getGlobalDispatcher()
+  const dispatcher = new Agent({ connect: { ca: readFileSync(certificatePath) } })
+  context.after(() => dispatcher.destroy())
+  const client = new WasabiClient({ ...options, dispatcher })
+  const status = await client.getStatus()
+  const loading = await client.loadWallet(['Savings / é?#%'])
+  const wallet = client.wallet('Savings / é?#%')
+  const info = await wallet.getWalletInfo()
+  assert.deepEqual({ status, loading, walletName: wallet.walletName, info }, {
     status: { jsonrpc: '2.0', id: calls[0].payload.id, result: { ok: true } },
     loading: { jsonrpc: '2.0', id: calls[1].payload.id },
     walletName: 'Savings / é?#%',
@@ -98,4 +90,50 @@ test('HTTPS reverse proxies preserve authentication, encoded wallet paths and pa
   assert.deepEqual(calls.map((call) => call.payload.method), ['getstatus', 'loadwallet', 'getwalletinfo'])
   assert.deepEqual(calls[1].payload.params, ['Savings / é?#%'])
   assert.ok(calls.every((call) => call.headers.authorization === `Basic ${Buffer.from('rpc-user:rpc-password').toString('base64')}`))
+  assert.equal(dispatcher.closed, false)
+  assert.equal(dispatcher.destroyed, false)
+  assert.equal(getGlobalDispatcher(), globalDispatcher)
+  await assert.rejects(new WasabiClient(options).getStatus(), WasabiTransportError)
+  assert.equal(calls.length, 3)
+})
+
+test('caller-supplied dispatchers support mutual TLS and sharing between clients', async (context) => {
+  const cert = readFileSync(certificatePath)
+  const key = readFileSync(new URL('./fixtures/proxy-key.pem', import.meta.url))
+  const server = createHttpsServer({ key, cert, ca: cert, requestCert: true }, (request, response) => {
+    assert.equal(request.socket.authorized, true)
+    let body = ''
+    request.setEncoding('utf8')
+    request.on('data', (chunk) => { body += chunk })
+    request.on('end', () => {
+      const payload = JSON.parse(body)
+      response.end(JSON.stringify({ jsonrpc: '2.0', id: payload.id, result: { authorized: true } }))
+    })
+  })
+  context.after(async () => {
+    server.closeAllConnections()
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+
+  const options = {
+    rpcUrl: `https://127.0.0.1:${server.address().port}/`,
+    rpcUsername: 'rpc-user',
+    rpcPassword: 'rpc-password'
+  }
+  const withoutCertificate = new Agent({ connect: { ca: cert } })
+  const dispatcher = new Agent({ connect: { ca: cert, cert, key } })
+  context.after(() => Promise.all([withoutCertificate.destroy(), dispatcher.destroy()]))
+  await assert.rejects(new WasabiClient({ ...options, dispatcher: withoutCertificate }).getStatus(), WasabiTransportError)
+  assert.equal(withoutCertificate.closed, false)
+  assert.equal(withoutCertificate.destroyed, false)
+
+  const client = new WasabiClient({ ...options, dispatcher })
+  const sharedClient = new WasabiClient({ ...options, dispatcher })
+  for (const response of await Promise.all([client.getStatus(), sharedClient.wallet('Savings').getWalletInfo()])) {
+    assert.deepEqual(response.result, { authorized: true })
+  }
+  assert.equal(dispatcher.closed, false)
+  assert.equal(dispatcher.destroyed, false)
 })
