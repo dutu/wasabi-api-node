@@ -42,7 +42,7 @@ Pass these settings to `new WasabiClient({ ... })`:
 | `rpcUrl` | No default | Required root HTTP or HTTPS URL, including any port or reverse-proxy prefix, e.g. `http://127.0.0.1:37128/` or `https://rpc.example.com/wasabi/`. URL credentials, query strings and fragments are rejected. |
 | `rpcUsername` | No default | Required non-empty HTTP Basic Auth username. Cannot contain `:`. |
 | `rpcPassword` | No default | Required non-empty HTTP Basic Auth password. |
-| `proxyUrl` | None | Optional `socks5h://` or `socks5://` proxy URL with an explicit port, e.g. `socks5h://127.0.0.1:9050`. With `socks5h://`, destination hostnames are resolved through the proxy. Proxy authentication may be supplied using a URL-encoded username and password. See Wasabi's [onion-service setup](https://docs.wasabiwallet.io/using-wasabi/RPC.html#expose-the-rpc-server-as-an-onion-service). |
+| `proxyUrl` | None | Optional `socks5h://` or `socks5://` proxy URL with an explicit port, e.g. `socks5h://127.0.0.1:9050`. Both schemes delegate destination hostname resolution to the proxy. Proxy authentication may be supplied using a URL-encoded username and password. See Wasabi's [onion-service setup](https://docs.wasabiwallet.io/using-wasabi/RPC.html#expose-the-rpc-server-as-an-onion-service). |
 | `timeoutMs` | `30000` | Positive integer timeout in milliseconds covering connection setup and reading the response. The timeout starts when the request is sent. |
 | `rejectRpcErrors` | `true` | When `true`, RPC methods throw `WasabiRpcError` for JSON-RPC error responses. When `false`, the complete JSON-RPC error response is returned instead. See [Errors](#errors). |
 
@@ -144,8 +144,9 @@ const client = new WasabiClient({
 })
 ```
 
-Use `socks5h://` when destination hostname resolution should occur through the
-proxy, which is normally required for `.onion` addresses.
+In this library, `socks5h://` and `socks5://` behave identically: both pass
+destination hostnames unchanged to the proxy for resolution, including `.onion`
+addresses. Neither scheme resolves destination hostnames locally.
 
 If proxy authentication is required, include URL-encoded credentials:
 
