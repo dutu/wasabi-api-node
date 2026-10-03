@@ -5,7 +5,8 @@
 A small Node.js client for the Wasabi Wallet JSON-RPC API. Requires
 **Node.js >= 22**.
 
-Supports HTTP and HTTPS RPC connections, optionally through a SOCKS5 proxy.
+Connects to Wasabi's plaintext HTTP RPC server, with HTTPS via a reverse proxy
+or custom dispatcher and optional SOCKS5 proxying.
 
 The library is intentionally thin: RPC responses are returned in their original
 JSON-RPC form and Wasabi-specific accounting or business logic is not added.
@@ -51,7 +52,7 @@ Pass these settings to `new WasabiClient({ ... })`:
 | `rpcPassword` | No default | Required non-empty HTTP Basic Auth password. |
 | `proxyUrl` | None | Optional SOCKS5 proxy URL with an explicit port, e.g. `socks5h://127.0.0.1:9050`. See the [proxy guide](./docs/proxy.md) for Tor setup, authentication and connection pooling. |
 | `proxyPooling` | `false` | Reuse the client's SOCKS5 connections across requests. Requires `proxyUrl`. Release the pool with `await client.close()`. |
-| `dispatcher` | None | Optional caller-owned Undici-compatible dispatcher for custom TLS or transport settings. Must have a `dispatch()` method. Cannot be combined with `proxyUrl`; configure any proxying in the dispatcher instead. See [Custom TLS and dispatchers](./docs/tls.md). |
+| `dispatcher` | None | Optional caller-owned Undici `Dispatcher` for custom TLS or transport settings. Cannot be combined with `proxyUrl`; configure any proxying in the dispatcher instead. See [Custom TLS and dispatchers](./docs/tls.md). |
 | `timeoutMs` | `30000` | Positive integer timeout in milliseconds covering connection setup and reading the response. The timeout starts when the request is sent. |
 | `rejectRpcErrors` | `true` | When `true`, RPC methods throw `WasabiRpcError` for JSON-RPC error responses. When `false`, the complete JSON-RPC error response is returned instead. See [Errors](#errors). |
 
@@ -102,21 +103,6 @@ All 27 methods exposed by Wasabi's RPC service have named wrappers, including
 `query`, which requires Wasabi's experimental `scripting` feature. See the
 [Wasabi RPC service source](https://github.com/WalletWasabi/WalletWasabi/blob/master/WalletWasabi.Client/Rpc/WasabiJsonRpcService.cs)
 for this method.
-
-`send()` builds and broadcasts a transaction. `build()`,
-`buildUnsafeTransaction()`, `speedUpTransaction()` and `cancelTransaction()`
-return transaction hex in the response result without broadcasting it. Pass
-that hex as `client.broadcast([response.result])` to broadcast it.
-`buildUnsafeTransaction()` uses Wasabi's builder without overpayment protection.
-`stop()` asks Wasabi to exit; it uses the usual response and transport error
-handling.
-
-Any RPC method is also accessible through `client.call(method, params, options)`
-at the root endpoint or `wallet.call(method, params, options)` at that wallet's
-endpoint. The method name is a non-empty string forwarded unchanged, with no
-allowlist. These calls use the same authentication, transport, request queue,
-timeouts and error handling as the named methods and return the complete
-JSON-RPC response.
 
 ```js
 const address = await wallet.getNewAddress(['Invoice', false])
@@ -180,9 +166,6 @@ Server fields and values are otherwise preserved.
 
 `createWallet()`, `recoverWallet()` and `loadWallet()` return the RPC response.
 Use `client.wallet('Wallet name')` separately to access wallet-specific methods.
-
-`getHistory()` returns Wasabi's history data without applying accounting
-calculations or interpreting CoinJoin costs.
 
 Requests made through a single client are sent serially. JSON-RPC batching is
 not implemented.

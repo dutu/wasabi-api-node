@@ -30,8 +30,8 @@ export type WasabiClientOptions<RejectRpcErrors extends boolean = boolean> = {
   | {
     proxyUrl?: undefined
     proxyPooling?: false | undefined
-    /** Caller-owned Undici-compatible dispatcher; the client never closes it. */
-    dispatcher: Pick<Dispatcher, 'dispatch'>
+    /** Caller-owned Undici dispatcher; the client never closes it. */
+    dispatcher: Dispatcher
   }
 )
 

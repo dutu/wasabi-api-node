@@ -97,7 +97,6 @@ const configuredOptions: WasabiClientOptions<false> = { ...credentials, rejectRp
 const configuredResponse: WasabiRpcResponse = await new WasabiClient(configuredOptions).getStatus()
 
 new WasabiClient({ ...credentials, dispatcher: new Agent() })
-new WasabiClient({ ...credentials, dispatcher: { dispatch() { return true } } })
 new WasabiClient({ ...credentials, proxyUrl: 'socks5h://127.0.0.1:9050' })
 const pooled = new WasabiClient({ ...credentials, proxyUrl: 'socks5h://127.0.0.1:9050', proxyPooling: true })
 const closing: Promise<void> = pooled.close()
@@ -116,6 +115,8 @@ new WasabiClient({ rpcUrl: credentials.rpcUrl })
 new WasabiClient({ ...credentials, rejectRpcErrors: 'false' })
 // @ts-expect-error A dispatcher and proxyUrl cannot be supplied together.
 new WasabiClient({ ...credentials, dispatcher: new Agent(), proxyUrl: 'socks5://localhost:9050' })
+// @ts-expect-error A dispatch-only object is not an Undici Dispatcher.
+new WasabiClient({ ...credentials, dispatcher: { dispatch() { return true } } })
 // @ts-expect-error Dispatch must be a method.
 new WasabiClient({ ...credentials, dispatcher: { dispatch: true } })
 // @ts-expect-error Proxy pooling requires a proxy URL.
