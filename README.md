@@ -244,6 +244,8 @@ Refer to the
 for RPC server configuration, individual method parameters and response
 definitions.
 
+For development setup and test commands, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+
 ## License
 
 [MIT](./LICENSE)

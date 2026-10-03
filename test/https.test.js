@@ -75,7 +75,8 @@ test('HTTPS reverse proxies preserve authentication, encoded wallet paths and pa
   assert.equal(calls.length, 0)
 
   // Trust the test CA at startup without changing production TLS validation.
-  const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '--eval', `
+  // Preserve loaders supplied through Node flags; NODE_OPTIONS is inherited below.
+  const { stdout } = await execFileAsync(process.execPath, [...process.execArgv, '--input-type=module', '--eval', `
     import { WasabiClient } from 'wasabi-api-node'
     const client = new WasabiClient(${JSON.stringify(options)})
     const status = await client.getStatus()

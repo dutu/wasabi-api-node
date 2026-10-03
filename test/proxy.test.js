@@ -258,7 +258,8 @@ test('HTTPS stays encrypted through the proxy and validates the destination cert
   assert.equal(fixture.requests.length, 0)
 
   // Trust only this fixture in a child process; TLS verification remains enabled.
-  const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '--eval', `
+  // Preserve loaders supplied through Node flags; NODE_OPTIONS is inherited below.
+  const { stdout } = await execFileAsync(process.execPath, [...process.execArgv, '--input-type=module', '--eval', `
     import assert from 'node:assert/strict'
     import { WasabiClient } from 'wasabi-api-node'
     const options = ${JSON.stringify({ ...credentials, rpcUrl, proxyUrl: fixture.proxyUrl })}
