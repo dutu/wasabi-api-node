@@ -1,5 +1,7 @@
 # wasabi-api-node
 
+[![CI](https://github.com/dutu/wasabi-api-node/actions/workflows/ci.yml/badge.svg)](https://github.com/dutu/wasabi-api-node/actions/workflows/ci.yml)
+
 A small Node.js client for the Wasabi Wallet JSON-RPC API. Requires
 **Node.js >= 22**.
 
