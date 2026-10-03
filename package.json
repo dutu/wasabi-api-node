@@ -3,7 +3,20 @@
   "version": "0.1.0",
   "description": "A minimal Node.js client for the Wasabi Wallet JSON-RPC API",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dutu/wasabi-api-node.git"
+  },
+  "author": "dutu",
+  "keywords": [
+    "wasabi",
+    "wasabi-wallet",
+    "bitcoin",
+    "json-rpc",
+    "socks5"
+  ],
   "type": "module",
+  "sideEffects": false,
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
   "exports": {
