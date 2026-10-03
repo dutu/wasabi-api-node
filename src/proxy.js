@@ -92,6 +92,8 @@ export const createProxyDispatcherFactory = function createProxyDispatcherFactor
   }
 
   return () => new Agent({
+    // The client serializes requests; one connection also permits immediate reuse.
+    connections: 1,
     connect: (options, callback) => {
       connect(options).then((socket) => callback(null, socket), (error) => callback(error, null))
     }

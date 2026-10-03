@@ -204,6 +204,115 @@ const waitForProxyConnectionsToClose = async function waitForProxyConnectionsToC
   assert.equal(fixture.sockets.size, 0)
 }
 
+test('pooled proxy connections reuse an authenticated tunnel across root and wallet requests until close', async (context) => {
+  const authentication = { username: 'proxy-user', password: 'proxy-password' }
+  const fixture = await createFixture(context, { authentication })
+  const client = fixture.client({
+    proxyUrl: fixture.proxyUrl.replace('://', '://proxy-user:proxy-password@'),
+    proxyPooling: true
+  })
+  context.after(() => client.close())
+  await client.getStatus()
+  await client.wallet('Savings').getWalletInfo()
+  await client.wallet('Spending').listCoins()
+  assert.equal(fixture.destinations.length, 1)
+  assert.deepEqual(fixture.proxyCredentials, [authentication])
+  assert.deepEqual(fixture.requests.map(({ url }) => url), ['/', '/Savings', '/Spending'])
+  assert.ok(fixture.sockets.size > 0)
+  await client.close()
+  await waitForProxyConnectionsToClose(fixture)
+})
+
+test('a pooled tunnel remains reusable after HTTP, JSON and RPC response errors', async (context) => {
+  const fixture = await createFixture(context, {
+    reply: (request) => {
+      if (request.method === 'getstatus') return { status: 401, body: 'Unauthorized' }
+      if (request.method === 'listwallets') return { body: 'invalid JSON' }
+      if (request.method === 'gethistory') return { jsonrpc: '2.0', id: request.id, error: { code: -32603, message: 'Wallet not loaded' } }
+      return { jsonrpc: '2.0', id: request.id, result: [] }
+    }
+  })
+  const client = fixture.client({ proxyPooling: true })
+  context.after(() => client.close())
+  await assert.rejects(client.getStatus(), WasabiHttpError)
+  await assert.rejects(client.listWallets(), WasabiResponseError)
+  await assert.rejects(client.wallet('Savings').getHistory(), WasabiRpcError)
+  assert.deepEqual((await client.wallet('Savings').listCoins()).result, [])
+  assert.equal(fixture.destinations.length, 1)
+  await client.close()
+  await waitForProxyConnectionsToClose(fixture)
+})
+
+for (const proxyPooling of [false, true]) {
+  test(`close drains accepted requests and their bodies, and rejects new calls: pooling=${proxyPooling}`, async (context) => {
+    let controller
+    let firstRequest
+    const dispatchers = []
+    context.mock.method(globalThis, 'fetch', async (url, options) => {
+      const request = JSON.parse(options.body)
+      dispatchers.push(options.dispatcher)
+      if (request.method === 'getstatus') {
+        firstRequest = request
+        return new Response(new ReadableStream({
+          start(streamController) { controller = streamController }
+        }))
+      }
+      return Response.json({ jsonrpc: '2.0', id: request.id, result: [] })
+    })
+    const client = new WasabiClient({ ...credentials, proxyUrl: 'socks5h://127.0.0.1:9050', proxyPooling })
+    const wallet = client.wallet('Savings')
+    const first = client.getStatus()
+    const second = wallet.listCoins()
+    const closing = client.close()
+    assert.equal(client.close(), closing)
+    let closed = false
+    closing.then(() => { closed = true })
+    await nextTurn()
+    assert.equal(closed, false)
+    assert.equal(dispatchers.length, 1)
+    assert.equal(dispatchers[0].closed, false)
+    assert.equal(dispatchers[0].destroyed, false)
+    await assert.rejects(client.getStatus(), { name: WasabiTransportError.name, message: 'Wasabi client is closed' })
+    await assert.rejects(wallet.listCoins(), WasabiTransportError)
+    controller.enqueue(new TextEncoder().encode(JSON.stringify({ jsonrpc: '2.0', id: firstRequest.id })))
+    controller.close()
+    await Promise.all([first, second, closing])
+    assert.equal(dispatchers.length, 2)
+    assert.equal(dispatchers[0] === dispatchers[1], proxyPooling)
+    assert.ok(dispatchers.every((dispatcher) => proxyPooling ? dispatcher.closed : dispatcher.destroyed))
+    await assert.rejects(wallet.getHistory(), WasabiTransportError)
+  })
+}
+
+test('close works before a pooled client has made a request', async () => {
+  const client = new WasabiClient({ ...credentials, proxyUrl: 'socks5h://127.0.0.1:9050', proxyPooling: true })
+  await client.close()
+  await assert.rejects(client.getStatus(), WasabiTransportError)
+})
+
+test('close preserves pooled dispatcher cleanup errors and stays closed', async (context) => {
+  const cause = new Error('Pool close failed')
+  let dispatcher
+  context.mock.method(globalThis, 'fetch', async (url, options) => {
+    dispatcher = options.dispatcher
+    context.mock.method(dispatcher, 'close', async () => { throw cause })
+    const request = JSON.parse(options.body)
+    return Response.json({ jsonrpc: '2.0', id: request.id })
+  })
+  const client = new WasabiClient({ ...credentials, proxyUrl: 'socks5h://127.0.0.1:9050', proxyPooling: true })
+  await client.getStatus()
+  context.after(() => dispatcher.destroy())
+  const closing = client.close()
+  await assert.rejects(closing, (error) => {
+    assert.ok(error instanceof WasabiTransportError)
+    assert.equal(error.cause, cause)
+    return true
+  })
+  assert.equal(client.close(), closing)
+  assert.equal(dispatcher.close.mock.callCount(), 1)
+  await assert.rejects(client.getStatus(), WasabiTransportError)
+})
+
 for (const scheme of ['socks5h', 'socks5']) {
   test(`${scheme} resolves onion destinations through the proxy for root and wallet requests`, async (context) => {
     const fixture = await createFixture(context)
@@ -280,6 +389,41 @@ test('HTTPS stays encrypted through the proxy and validates the destination cert
   assert.ok(fixture.destinations.some((destination) => destination.hostname === 'rpc.test.invalid' && destination.port === 443))
   assert.equal(fixture.requests[0].headers.host, 'rpc.test.invalid')
   assert.equal(fixture.requests.length, 1)
+  await waitForProxyConnectionsToClose(fixture)
+})
+
+test('pooled HTTPS requests reuse the TLS tunnel and close it explicitly', async (context) => {
+  const fixture = await createFixture(context, { secure: true })
+  await execFileAsync(process.execPath, [...process.execArgv, '--input-type=module', '--eval', `
+    import assert from 'node:assert/strict'
+    import { WasabiClient } from 'wasabi-api-node'
+    const client = new WasabiClient(${JSON.stringify({ ...credentials, rpcUrl: 'https://rpc.test.invalid/', proxyUrl: fixture.proxyUrl, proxyPooling: true })})
+    try {
+      assert.deepEqual((await client.getStatus()).result, { ok: true })
+      assert.deepEqual((await client.wallet('Savings').getWalletInfo()).result, { ok: true })
+    } finally {
+      await client.close()
+    }
+  `], {
+    env: { ...process.env, NODE_EXTRA_CA_CERTS: certificatePath },
+    timeout: 5000
+  })
+  assert.deepEqual(fixture.destinations, [{ addressType: 3, hostname: 'rpc.test.invalid', port: 443 }])
+  assert.deepEqual(fixture.requests.map(({ url }) => url), ['/', '/Savings'])
+  await waitForProxyConnectionsToClose(fixture)
+})
+
+test('a pooled client reconnects when the RPC server closes a keep-alive tunnel', async (context) => {
+  const fixture = await createFixture(context, {
+    reply: (request) => ({ jsonrpc: '2.0', id: request.id, result: [], headers: { Connection: 'close' } })
+  })
+  const client = fixture.client({ proxyPooling: true })
+  context.after(() => client.close())
+  await client.getStatus()
+  await client.wallet('Savings').listCoins()
+  assert.equal(fixture.destinations.length, 2)
+  assert.equal(fixture.requests.length, 2)
+  await client.close()
   await waitForProxyConnectionsToClose(fixture)
 })
 
@@ -455,40 +599,53 @@ for (const [label, reply, errorClass, rejectRpcErrors] of [
   })
 }
 
-test('automatically releases a proxy tunnel when reading the response body times out', async (context) => {
-  const fixture = await createFixture(context, {
-    reply: (request, response) => {
-      if (request.method === 'getstatus') {
-        response.writeHead(200, { 'Content-Type': 'application/json' })
-        response.write('{"jsonrpc":"2.0",')
-        return
+for (const proxyPooling of [false, true]) {
+  test(`releases a timed-out proxy tunnel and permits the next queued request: pooling=${proxyPooling}`, async (context) => {
+    const fixture = await createFixture(context, {
+      reply: (request, response) => {
+        if (request.method === 'getstatus') {
+          response.writeHead(200, { 'Content-Type': 'application/json' })
+          response.write('{"jsonrpc":"2.0",')
+          return
+        }
+
+        return { jsonrpc: '2.0', id: request.id, result: [] }
       }
-
-      return { jsonrpc: '2.0', id: request.id, result: [] }
-    }
+    })
+    const client = fixture.client({ timeoutMs: 200, proxyPooling })
+    context.after(() => client.close())
+    const results = await Promise.allSettled([client.getStatus(), client.listWallets()])
+    assert.equal(results[0].status, 'rejected')
+    assert.ok(results[0].reason instanceof WasabiTransportError)
+    assert.equal(results[0].reason.cause.name, 'TimeoutError')
+    assert.equal(results[1].status, 'fulfilled')
+    assert.deepEqual(results[1].value.result, [])
+    assert.equal(fixture.destinations.length, 2)
+    await client.close()
+    await waitForProxyConnectionsToClose(fixture)
   })
-  const client = fixture.client({ timeoutMs: 200 })
-  const results = await Promise.allSettled([client.getStatus(), client.listWallets()])
-  assert.equal(results[0].status, 'rejected')
-  assert.ok(results[0].reason instanceof WasabiTransportError)
-  assert.equal(results[0].reason.cause.name, 'TimeoutError')
-  assert.equal(results[1].status, 'fulfilled')
-  assert.deepEqual(results[1].value.result, [])
-  await waitForProxyConnectionsToClose(fixture)
-  assert.equal(fixture.destinations.length, 2)
-})
 
-test('automatically releases a proxy tunnel when the response body connection breaks', async (context) => {
-  const fixture = await createFixture(context, {
-    reply: (request, response) => {
-      response.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': '1000' })
-      response.write('{"jsonrpc":"2.0",')
-      setImmediate(() => response.destroy())
-    }
+  test(`releases a broken proxy tunnel and permits the next request: pooling=${proxyPooling}`, async (context) => {
+    const fixture = await createFixture(context, {
+      reply: (request, response) => {
+        if (request.method !== 'getstatus') {
+          return { jsonrpc: '2.0', id: request.id, result: [] }
+        }
+        response.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': '1000' })
+        response.write('{"jsonrpc":"2.0",')
+        setImmediate(() => response.destroy())
+      }
+    })
+    const client = fixture.client({ proxyPooling })
+    context.after(() => client.close())
+    await assert.rejects(client.getStatus(), WasabiTransportError)
+    assert.deepEqual((await client.listWallets()).result, [])
+    assert.equal(fixture.destinations.length, 2)
+    assert.equal(fixture.requests.length, 2)
+    await client.close()
+    await waitForProxyConnectionsToClose(fixture)
   })
-  await assert.rejects(fixture.client().getStatus(), WasabiTransportError)
-  await waitForProxyConnectionsToClose(fixture)
-})
+}
 
 for (const failRequest of [false, true]) {
   test(`proxy cleanup failures reject without losing an earlier request error: failRequest=${failRequest}`, async (context) => {

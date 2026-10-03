@@ -35,7 +35,7 @@ console.log(walletInfo.result, history.result, unspentCoins.result)
 
 ## TypeScript
 
-TypeScript declarations are included. See the [TypeScript guide](./TYPESCRIPT.md)
+TypeScript declarations are included. See the [TypeScript guide](./docs/typescript.md)
 for typed results, error handling and exported types.
 
 ## Connection options
@@ -47,7 +47,8 @@ Pass these settings to `new WasabiClient({ ... })`:
 | `rpcUrl` | No default | Required root HTTP or HTTPS URL, including any port or reverse-proxy prefix, e.g. `http://127.0.0.1:37128/` or `https://rpc.example.com/wasabi/`. URL credentials, query strings and fragments are rejected. |
 | `rpcUsername` | No default | Required non-empty HTTP Basic Auth username. Cannot contain `:`. |
 | `rpcPassword` | No default | Required non-empty HTTP Basic Auth password. |
-| `proxyUrl` | None | Optional `socks5h://` or `socks5://` proxy URL with an explicit port, e.g. `socks5h://127.0.0.1:9050`. Both schemes delegate destination hostname resolution to the proxy. Proxy authentication may be supplied using a URL-encoded username and password. See Wasabi's [onion-service setup](https://docs.wasabiwallet.io/using-wasabi/RPC.html#expose-the-rpc-server-as-an-onion-service). |
+| `proxyUrl` | None | Optional SOCKS5 proxy URL with an explicit port, e.g. `socks5h://127.0.0.1:9050`. See the [proxy guide](./docs/proxy.md) for Tor setup, authentication and connection pooling. |
+| `proxyPooling` | `false` | Reuse the client's SOCKS5 connections across requests. Requires `proxyUrl`. Release the pool with `await client.close()`. |
 | `dispatcher` | None | Optional caller-owned Undici-compatible dispatcher for custom TLS or transport settings. Must have a `dispatch()` method. Cannot be combined with `proxyUrl`; configure any proxying in the dispatcher instead. See [Custom TLS and dispatchers](#custom-tls-and-dispatchers). |
 | `timeoutMs` | `30000` | Positive integer timeout in milliseconds covering connection setup and reading the response. The timeout starts when the request is sent. |
 | `rejectRpcErrors` | `true` | When `true`, RPC methods throw `WasabiRpcError` for JSON-RPC error responses. When `false`, the complete JSON-RPC error response is returned instead. See [Errors](#errors). |
@@ -229,31 +230,6 @@ not implemented.
 The client does not automatically retry failed requests or follow HTTP
 redirects.
 
-## SOCKS5 proxy support
-
-A SOCKS5 proxy can be configured with `proxyUrl`.
-
-For example:
-
-```js
-const client = new WasabiClient({
-  rpcUrl: 'http://exampleonionaddress.onion/',
-  rpcUsername: process.env.WASABI_RPC_USERNAME,
-  rpcPassword: process.env.WASABI_RPC_PASSWORD,
-  proxyUrl: 'socks5h://127.0.0.1:9050'
-})
-```
-
-In this library, `socks5h://` and `socks5://` behave identically: both pass
-destination hostnames unchanged to the proxy for resolution, including `.onion`
-addresses. Neither scheme resolves destination hostnames locally.
-
-If proxy authentication is required, include URL-encoded credentials:
-
-```text
-socks5h://username:password@127.0.0.1:9050
-```
-
 ## Errors
 
 RPC methods may throw the errors below.
@@ -264,7 +240,7 @@ responses are handled.
 | Error class | When | Error object |
 | --- | --- | --- |
 | `TypeError` | Invalid constructor settings, wallet names, method names, request options or request IDs, or unserializable parameters | `error.message` |
-| `WasabiTransportError` | Connection, proxy, timeout, body-read or transport-cleanup failure | `error.cause` |
+| `WasabiTransportError` | Connection, proxy, timeout, body-read or transport-cleanup failure, or an RPC call after `close()` | `error.cause` for underlying failures |
 | `WasabiHttpError` | Non-2xx HTTP response | `error.status`, `error.statusText`, `error.body`, `error.method` |
 | `WasabiRpcError` | JSON-RPC error response when `rejectRpcErrors` is `true` | `error.response` contains the complete JSON-RPC error response. `error.message` equals `error.response.error.message`. |
 | `WasabiResponseError` | Invalid JSON, malformed JSON-RPC response or mismatched response ID | `error.cause` is available for JSON parsing failures |

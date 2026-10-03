@@ -71,6 +71,8 @@ test('forwards a caller-owned dispatcher without cleaning it up after success or
   await client.wallet('Savings').getWalletInfo()
   assert.equal(calls.length, 3)
   assert.ok(calls.every((call) => call.options.dispatcher === dispatcher))
+  await client.close()
+  await assert.rejects(client.getStatus(), { name: WasabiTransportError.name, message: 'Wasabi client is closed' })
   assert.equal(dispatcher.close.mock.callCount(), 0)
   assert.equal(dispatcher.destroy.mock.callCount(), 0)
 })
@@ -811,7 +813,7 @@ test('the public interfaces do not expose the low-level transport', () => {
   assert.equal(typeof wallet.send, 'function')
   assert.equal(client.getWalletInfo, undefined)
   assert.equal(wallet.getStatus, undefined)
-  assert.equal(client.close, undefined)
+  assert.equal(typeof client.close, 'function')
 })
 
 for (const [label, options] of [
@@ -839,6 +841,11 @@ for (const [label, options] of [
   ['string RPC error policy', { rejectRpcErrors: 'false' }],
   ['numeric RPC error policy', { rejectRpcErrors: 0 }],
   ['object RPC error policy', { rejectRpcErrors: {} }],
+  ['null proxy pooling', { proxyPooling: null }],
+  ['string proxy pooling', { proxyPooling: 'true' }],
+  ['numeric proxy pooling', { proxyPooling: 1 }],
+  ['proxy pooling without proxy', { proxyPooling: true }],
+  ['proxy pooling with caller dispatcher', { proxyPooling: true, dispatcher: { dispatch() {} } }],
   ['null dispatcher', { dispatcher: null }],
   ['string dispatcher', { dispatcher: 'agent' }],
   ['numeric dispatcher', { dispatcher: 1 }],

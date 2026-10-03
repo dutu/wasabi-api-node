@@ -14,7 +14,7 @@
   },
   "files": [
     "src",
-    "TYPESCRIPT.md"
+    "docs"
   ],
   "engines": {
     "node": ">=22"

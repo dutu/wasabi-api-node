@@ -31,4 +31,4 @@ The exported `WasabiClientOptions`, `WasabiRequestOptions`, `WasabiRpcResponse`,
 types can be used in your own interfaces. `WasabiWallet` is a type-only export;
 create wallet handles through `client.wallet()`.
 
-See the [README](./README.md) for connection settings and the complete API.
+See the [README](../README.md) for connection settings and the complete API.

@@ -34,6 +34,8 @@ export class WasabiClient {
   #rejectRpcErrors
   #dispatcher
   #createDispatcher
+  #proxyDispatcher
+  #closePromise
   #queue = Promise.resolve()
 
   /**
@@ -42,6 +44,7 @@ export class WasabiClient {
    * @param {string} options.rpcPassword Wasabi's JsonRpcPassword
    * @param {string} options.rpcUrl Root HTTP(S) RPC URL
    * @param {string} [options.proxyUrl] SOCKS5 proxy URL, with destination DNS resolved by the proxy
+   * @param {boolean} [options.proxyPooling=false] Reuse proxy connections until close(); requires proxyUrl
    * @param {import('undici').Dispatcher} [options.dispatcher] Caller-owned dispatcher; cannot be combined with proxyUrl
    * @param {number} [options.timeoutMs=30000] Timeout per dispatched request
    * @param {boolean} [options.rejectRpcErrors=true] Reject JSON-RPC errors while preserving their response
@@ -57,7 +60,7 @@ export class WasabiClient {
       throw new TypeError('Pass the wallet name to wallet(walletName) or loadWallet([walletName])')
     }
 
-    const { rpcUrl, rpcUsername, rpcPassword, proxyUrl, dispatcher, timeoutMs = 30000, rejectRpcErrors = true } = options
+    const { rpcUrl, rpcUsername, rpcPassword, proxyUrl, proxyPooling = false, dispatcher, timeoutMs = 30000, rejectRpcErrors = true } = options
     this.#rpcUrl = createRpcUrl(rpcUrl)
     requireString(rpcUsername, 'rpcUsername')
     requireString(rpcPassword, 'rpcPassword')
@@ -72,6 +75,14 @@ export class WasabiClient {
 
     if (typeof rejectRpcErrors !== 'boolean') {
       throw new TypeError('rejectRpcErrors must be a boolean')
+    }
+
+    if (typeof proxyPooling !== 'boolean') {
+      throw new TypeError('proxyPooling must be a boolean')
+    }
+
+    if (proxyPooling && proxyUrl === undefined) {
+      throw new TypeError('proxyPooling requires proxyUrl')
     }
 
     if (dispatcher !== undefined) {
@@ -90,6 +101,19 @@ export class WasabiClient {
     this.#rejectRpcErrors = rejectRpcErrors
     this.#dispatcher = dispatcher
     this.#createDispatcher = createProxyDispatcherFactory(proxyUrl, timeoutMs)
+    this.#proxyDispatcher = proxyPooling ? this.#createDispatcher() : undefined
+  }
+
+  /** Drain accepted requests and close the owned proxy pool. Caller-owned dispatchers remain open. */
+  close() {
+    this.#closePromise ??= this.#queue.then(async () => {
+      try {
+        await this.#proxyDispatcher?.close()
+      } catch (cause) {
+        throw new WasabiTransportError(`Wasabi proxy dispatcher close failed: ${cause?.message ?? String(cause)}`, { cause })
+      }
+    })
+    return this.#closePromise
   }
 
   getStatus(options) {
@@ -157,6 +181,10 @@ export class WasabiClient {
   }
 
   async #request(method, options = {}, { walletName, params } = {}) {
+    if (this.#closePromise !== undefined) {
+      throw new WasabiTransportError('Wasabi client is closed')
+    }
+
     requireString(method, 'method')
     requireOptions(options)
     const id = options.id === undefined ? randomUUID() : requireString(options.id, 'id')
@@ -180,8 +208,8 @@ export class WasabiClient {
   }
 
   async #send(endpoint, request, requestBody) {
-    const ownedDispatcher = this.#createDispatcher?.()
-    const dispatcher = this.#dispatcher ?? ownedDispatcher
+    const ownedDispatcher = this.#proxyDispatcher === undefined ? this.#createDispatcher?.() : undefined
+    const dispatcher = this.#dispatcher ?? this.#proxyDispatcher ?? ownedDispatcher
     let response
     let body
     let failure

@@ -99,6 +99,10 @@ const configuredResponse: WasabiRpcResponse = await new WasabiClient(configuredO
 new WasabiClient({ ...credentials, dispatcher: new Agent() })
 new WasabiClient({ ...credentials, dispatcher: { dispatch() { return true } } })
 new WasabiClient({ ...credentials, proxyUrl: 'socks5h://127.0.0.1:9050' })
+const pooled = new WasabiClient({ ...credentials, proxyUrl: 'socks5h://127.0.0.1:9050', proxyPooling: true })
+const closing: Promise<void> = pooled.close()
+new WasabiClient({ ...credentials, proxyPooling: false })
+new WasabiClient({ ...credentials, proxyPooling: undefined })
 new WasabiClient({ ...credentials, timeoutMs: undefined, rejectRpcErrors: undefined })
 client.getStatus({ id: undefined })
 client.loadWallet(undefined)
@@ -114,6 +118,12 @@ new WasabiClient({ ...credentials, rejectRpcErrors: 'false' })
 new WasabiClient({ ...credentials, dispatcher: new Agent(), proxyUrl: 'socks5://localhost:9050' })
 // @ts-expect-error Dispatch must be a method.
 new WasabiClient({ ...credentials, dispatcher: { dispatch: true } })
+// @ts-expect-error Proxy pooling requires a proxy URL.
+new WasabiClient({ ...credentials, proxyPooling: true })
+// @ts-expect-error Proxy pooling cannot use a caller-owned dispatcher.
+new WasabiClient({ ...credentials, proxyPooling: true, dispatcher: new Agent() })
+// @ts-expect-error Proxy pooling must be a boolean.
+new WasabiClient({ ...credentials, proxyUrl: 'socks5h://127.0.0.1:9050', proxyPooling: 'true' })
 // @ts-expect-error Request IDs are strings.
 client.getStatus({ id: 2 })
 // @ts-expect-error Method names are strings.

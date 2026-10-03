@@ -18,10 +18,18 @@ export type WasabiClientOptions<RejectRpcErrors extends boolean = boolean> = {
   | {
     /** SOCKS5 URL. Destination hostnames are resolved by the proxy. */
     proxyUrl?: string | undefined
+    proxyPooling?: false | undefined
+    dispatcher?: undefined
+  }
+  | {
+    proxyUrl: string
+    /** Reuse proxy connections until client.close(); defaults to false. */
+    proxyPooling?: boolean | undefined
     dispatcher?: undefined
   }
   | {
     proxyUrl?: undefined
+    proxyPooling?: false | undefined
     /** Caller-owned Undici-compatible dispatcher; the client never closes it. */
     dispatcher: Pick<Dispatcher, 'dispatch'>
   }
@@ -60,6 +68,9 @@ export type WasabiRpcResponse<Result = unknown, RejectRpcErrors extends boolean 
 /** Connection settings are immutable. All requests share a serial queue. */
 export class WasabiClient<RejectRpcErrors extends boolean = true> {
   constructor(options: WasabiClientOptions<RejectRpcErrors>)
+
+  /** Drain accepted requests and close the owned proxy pool. Reject new calls; never close caller-owned dispatchers. */
+  close(): Promise<void>
 
   /** Parameters are forwarded unchanged; undefined omits params. Wasabi validates their contents. */
   call<Result = unknown>(method: string, params?: unknown, options?: WasabiRequestOptions): Promise<WasabiRpcResponse<Result, RejectRpcErrors>>
