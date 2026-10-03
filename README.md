@@ -36,11 +36,6 @@ const unspentCoins = await wallet.listUnspentCoins()
 console.log(walletInfo.result, history.result, unspentCoins.result)
 ```
 
-## TypeScript
-
-TypeScript declarations are included. See the [TypeScript guide](./docs/typescript.md)
-for typed results, error handling and exported types.
-
 ## Connection options
 
 Pass these settings to `new WasabiClient({ ... })`:
@@ -235,6 +230,11 @@ Transport, HTTP and malformed-response failures still throw normally.
 
 The constructor and `wallet()` validate their inputs synchronously and may throw
 `TypeError` immediately.
+
+## TypeScript
+
+TypeScript declarations are included. See the [TypeScript guide](./docs/typescript.md)
+for typed results, error handling and exported types.
 
 ## Wasabi RPC notes
 
