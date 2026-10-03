@@ -1,4 +1,5 @@
 .yarn/*
+!.yarn/cache
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
@@ -9,9 +10,13 @@
 # build artifacts that should be gitignored
 node_modules
 
-# Swap the comments on the following lines if you wish to use zero-installs
-# In that case, don't forget to run `yarn config set enableGlobalCache false`!
-# Documentation here: https://yarnpkg.com/features/caching#zero-installs
+# Keep the PnP loaders and local cache available for Yarn zero-installs.
+# Documentation: https://yarnpkg.com/features/caching#zero-installs
 
-#!.yarn/cache
-.pnp.*
+.idea/
+coverage/
+*.tgz
+.env
+.env.*
+!.env.example
+*.log
