@@ -10,6 +10,13 @@ yarn install --immutable
 yarn test
 ```
 
+`yarn test` runs the runtime tests and strict TypeScript consumer checks using
+both NodeNext and bundler module resolution. To run only the declaration checks:
+
+```sh
+yarn test:types
+```
+
 Yarn enables the PnP loaders automatically. To run Node directly after a Yarn
 install, enable both loaders explicitly:
 

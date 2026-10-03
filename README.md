@@ -33,6 +33,11 @@ const unspentCoins = await wallet.listUnspentCoins()
 console.log(walletInfo.result, history.result, unspentCoins.result)
 ```
 
+## TypeScript
+
+TypeScript declarations are included. See the [TypeScript guide](./TYPESCRIPT.md)
+for typed results, error handling and exported types.
+
 ## Connection options
 
 Pass these settings to `new WasabiClient({ ... })`:
