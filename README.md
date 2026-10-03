@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/dutu/wasabi-api-node/actions/workflows/ci.yml/badge.svg)](https://github.com/dutu/wasabi-api-node/actions/workflows/ci.yml)
 
-A small Node.js client for the Wasabi Wallet JSON-RPC API. Requires
+A small, unofficial Node.js client for the Wasabi Wallet JSON-RPC API. Requires
 **Node.js >= 22**.
 
 Connects to Wasabi's plaintext HTTP RPC server, with optional SOCKS5 proxying. 
@@ -13,6 +13,20 @@ JSON-RPC form and Wasabi-specific accounting or business logic is not added.
 
 For server setup, RPC parameters and response definitions, see the
 [official Wasabi RPC documentation](https://docs.wasabiwallet.io/using-wasabi/RPC.html).
+
+## Installation
+
+Using npm:
+
+```sh
+npm install wasabi-api-node
+```
+
+Using Yarn:
+
+```sh
+yarn add wasabi-api-node
+```
 
 ## Usage
 
@@ -94,21 +108,15 @@ names must be non-empty strings and cannot be `.` or `..`.
 | Wallet | `startCoinJoinSweep(params, options)` | `startcoinjoinsweep` |
 | Wallet | `stopCoinJoin(options)` | `stopcoinjoin` |
 
-The library provides dedicated client methods for all 26 RPC methods documented by Wasabi. 
-It also exposes the experimental `query` method found in `WasabiJsonRpcService`, which requires Wasabi's scripting experimental feature.
+The library provides a dedicated method for each of the 26 RPC methods documented by Wasabi.
+It also exposes the experimental `query` method implemented by `WasabiJsonRpcService`, which requires Wasabi's experimental `scripting` feature.
 
 ```js
 const address = await wallet.getNewAddress(['Invoice', false])
 const keys = await wallet.listKeys()
-const transaction = await wallet.call('build', buildParams, { id: 'build-1' })
-const status = await client.call('getstatus', undefined, { id: 'status-1' })
+const transaction = await wallet.build(buildParams, { id: 'build-1' })
+const status = await client.getStatus({ id: 'status-1' })
 ```
-
-Omit `params` or pass `undefined` to omit it from the request. To set options on
-a generic call without parameters, pass `undefined` as the second argument.
-Parameters are serialized when the call is made, before it is queued, and
-Wasabi validates their contents. `getNewAddress()` creates a new receiving
-address; its parameters are forwarded just like `loadWallet()` parameters.
 
 ## Calling methods
 
@@ -261,7 +269,7 @@ Refer to the
 for RPC server configuration, individual method parameters and response
 definitions.
 
-For development setup and test commands, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+For development setup and test commands, see [CONTRIBUTING.md](https://github.com/dutu/wasabi-api-node/blob/master/CONTRIBUTING.md).
 
 ## License
 
