@@ -1,0 +1,33 @@
+# package.json's files allowlist controls the published runtime and docs.
+# Keep development files excluded if that allowlist is expanded or removed.
+
+# Tests and generated reports
+/test/
+/type-tests/
+/coverage/
+/.nyc_output/
+
+# Local dependencies and Yarn Plug'n'Play files
+/node_modules/
+/.yarn/
+/.pnp.*
+/.yarnrc.yml
+/yarn.lock
+
+# CI, editor and agent configuration
+/.github/
+/.idea/
+/.vscode/
+/.agents/
+/.codex/
+/AGENTS.md
+/.editorconfig
+/.gitattributes
+
+# Local environment, logs and package archives
+.env
+.env.*
+*.log
+*.tgz
+.DS_Store
+Thumbs.db
