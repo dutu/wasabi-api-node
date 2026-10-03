@@ -151,6 +151,7 @@ export class WasabiClient {
     let response
     let body
     let failure
+    let failed = false
 
     try {
       response = await fetch(endpoint, {
@@ -168,18 +169,20 @@ export class WasabiClient {
       body = await response.text()
     } catch (cause) {
       failure = cause
+      failed = true
     } finally {
       try {
         await ownedDispatcher?.destroy()
       } catch (cause) {
-        failure = failure === undefined
-          ? cause
-          : new AggregateError([failure, cause], 'Request and proxy cleanup failed')
+        failure = failed
+          ? new AggregateError([failure, cause], 'Request and proxy cleanup failed')
+          : cause
+        failed = true
       }
     }
 
-    if (failure !== undefined) {
-      throw new WasabiTransportError(`Wasabi ${request.method} request failed: ${failure.message}`, { cause: failure })
+    if (failed) {
+      throw new WasabiTransportError(`Wasabi ${request.method} request failed: ${failure?.message ?? String(failure)}`, { cause: failure })
     }
 
     if (!response.ok) {
